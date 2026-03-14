@@ -30,6 +30,7 @@ GLOBAL_TOPICS = $(GLOBAL_OUTPUT)/topics.csv
 REFINED_STUDENT = $(ROLE_STUDENT_OUTPUT)/refined_topics.csv
 REFINED_EDUCATOR = $(ROLE_EDUCATOR_OUTPUT)/refined_topics.csv
 REFINED_GLOBAL = $(GLOBAL_OUTPUT)/refined_topics.csv
+DTM= outputs/global/dtm_topics_over_time.csv 
 
 # Install dependencies
 install:
@@ -41,8 +42,13 @@ collect:
 
 # Inspect
 inspect:
-	$(PYTHON) -m scripts/utils/inspect_csv --input $(CLEAN_DATA)
+	$(PYTHON) -m scripts.utils.inspect_csv --input $(CLEAN_DATA)
 
+inspect_year:
+	$(PYTHON) -m scripts.utils.inspect_year --input $(CLEAN_DATA) --date_col "created_utc"
+
+inspect_unique:
+	$(PYTHON) -m scripts.utils.inspect_unique --input $(CLEAN_DATA) --col "year"
 # Merge yearly datasets
 merge:
 	$(PYTHON) -m scripts.main_merge_yearly \
@@ -126,8 +132,9 @@ refine_yearly:
 
 categorize:
 	$(PYTHON) -m scripts.main_thematic_categorization \
-	--input $(CLEAN_DATA) \
-	--output outputs/global/semantic_categories.csv 
+	--input $(GLOBAL_TOPICS) \
+	--output outputs/global/topic_with_semantic_categories.csv 
+
 
 topic_proportion_plot:
 	$(PYTHON) -m scripts.main_plot_topic_proportions \
@@ -135,15 +142,34 @@ topic_proportion_plot:
 	--output $(OUTPUT_DIR)/figures/figures_proportion_stackbar.png
 
 help:
+	@echo ""
 	@echo "Available commands:"
-	@echo "  make collect        - scrape Reddit data"
-	@echo "  make merge          - merge yearly files"
-	@echo "  make preprocess     - clean dataset"
-	@echo "  make classify       - run role classification"
-	@echo "  make global         - global topic modeling"
-	@echo "  make yearly         - yearly topic modeling"
-	@echo "  make role_student   - student topic modeling"
-	@echo "  make role_educator  - educator topic modeling"
-	@echo "  make refine_global  - refine global topics"
-	@echo "  make refine_student - refine student topics"
-	@echo "  make refine_educator- refine educator topics"
+	@echo "------------------------------------------------------"
+	@echo "Setup:"
+	@echo "  make install              Install Python dependencies"
+	@echo ""
+	@echo "Data Pipeline:"
+	@echo "  make collect              Collect Reddit data"
+	@echo "  make merge                Merge yearly datasets"
+	@echo "  make preprocess           Clean and preprocess dataset"
+	@echo "  make classify             Run role classification"
+	@echo ""
+	@echo "Topic Modeling:"
+	@echo "  make global               Global topic model"
+	@echo "  make yearly               Yearly topic models"
+	@echo "  make role_student         Student topic model"
+	@echo "  make role_educator        Educator topic model"
+	@echo ""
+	@echo "Topic Refinement:"
+	@echo "  make refine_global        Refine global topics"
+	@echo "  make refine_student       Refine student topics"
+	@echo "  make refine_educator      Refine educator topics"
+	@echo "  make refine_yearly        Refine yearly topics"
+	@echo ""
+	@echo "Analysis:"
+	@echo "  make dtm                  Generate topics-over-time data"
+	@echo "  make categorize           Assign semantic topic categories"
+	@echo ""
+	@echo "Visualization:"
+	@echo "  make topic_proportion_plot  Generate stacked bar chart"
+	@echo ""
