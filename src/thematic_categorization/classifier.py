@@ -1,16 +1,21 @@
-import json
 import os
+import json
+import logging
+import pandas as pd
 from tqdm import tqdm
-from openai import AsyncOpenAI
+from typing import Optional
+from openai import OpenAI
 from rapidfuzz import process
 from dotenv import load_dotenv
 
 from .categories import CATEGORIES
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-5"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 def normalize_category(label):
     match, score, _ = process.extractOne(label, CATEGORIES)
@@ -20,62 +25,76 @@ def normalize_category(label):
 
     return "Other Off-Topic / General Discussions"
 
-async def classify_batch(batch_texts):
 
-    joined = ""
-    for i, text in enumerate(batch_texts):
-        joined += f"ITEM {i}:\n{text}\n\n"
+SYSTEM_PROMPT = f"""
+You are an expert in AI-in-education discourse analysis.
 
-    prompt = f"""
-You are a context-aware classifier for Reddit posts about AI and Education.
+Your task is to assign a discovered topic to EXACTLY ONE category.
 
-Assign EACH item to EXACTLY ONE category from this list:
-
+Available categories:
 {CATEGORIES}
 
-Return JSON ONLY in this format:
-{{ "labels": ["Category for ITEM 0", "Category for ITEM 1"] }}
+Return JSON only in this format:
 
-Items:
-{joined}
+{{ "category": "Chosen Category" }}
 """
 
-    response = await client.responses.create(
+
+def gpt_classify_topic(rep_docs: str, keywords: str):
+
+    prompt = f"""
+Topic Keywords:
+{keywords}
+
+Representative Posts:
+{rep_docs}
+"""
+
+    response = client.chat.completions.create(
         model=MODEL,
-        input=prompt
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
     )
 
     try:
-        raw = response.output_text
+        raw = response.choices[0].message.content
         data = json.loads(raw)
 
-        labels = data["labels"]
-        if len(labels) != len(batch_texts):
-            raise ValueError("Invalid label count")
+        label = data["category"]
+        label = normalize_category(label)
 
-        labels = [normalize_category(l) for l in labels]
-        return labels
-    
+        return label
+
     except Exception as e:
-        return ["Other Off-Topic / General Discussions"] * len(batch_texts)
+        logger.warning(f"Classification error: {e}")
+        return "Other Off-Topic / General Discussions"
 
 
-async def classify_dataframe(df, text_column="clean_text", batch_size=20):
+def categorize_topics(
+    input_path: str,
+    output_path: str
+):
 
-    results = []
-    count = 0
-    for start in tqdm(range(0, len(df), batch_size)):
+    df = pd.read_csv(input_path)
 
-        batch = df.iloc[start:start+batch_size][text_column].astype(str).tolist()
-        labels = await classify_batch(batch)
-        results.extend(labels)
-        count +=1
-        if (count == 5):
-            break
-    remaining = len(df)-len(results)
-    if remaining > 0:
-        results += ["Other Off-Topic / General Discussions"] * (remaining)
+    categories = []
 
-    df["Topic Category"] = results
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Categorizing topics"):
+
+        category = gpt_classify_topic(
+            rep_docs=str(row.get("Representative_Docs", "")),
+            keywords=str(row.get("Representation", ""))
+        )
+
+        categories.append(category)
+
+    df["Topic Category"] = categories
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    df.to_csv(output_path, index=False)
+
+    print(f"Saved categorized topics → {output_path}")
 
     return df
